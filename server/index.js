@@ -11,6 +11,8 @@ const {
   fetchUserReviews,
   fetchItemReviews,
   fetchUserComments,
+  updateUserReview,
+  findReviewById,
   deleteUserReview,
   deleteUserComment,
   authenticate,
@@ -29,7 +31,6 @@ const isLoggedIn = async (req, res, next) => {
       "Bearer ",
       ""
     );
-    // const token = req.headers.authorization.replace("Bearer ", "");
 
     console.log("modified token:", req.headers.authorization);
 
@@ -120,6 +121,7 @@ app.get("/api/items/:itemId/reviews/:id", async (req, res, next) => {
 
 app.post("/api/items/:itemId/reviews", isLoggedIn, async (req, res, next) => {
   try {
+    console.log("Request body:", req.body);
     const { text, rating } = req.body;
     const userId = req.user.id;
 
@@ -150,6 +152,62 @@ app.get("/api/reviews/me", isLoggedIn, async (req, res, next) => {
     next(error);
   }
 });
+
+app.put(
+  "/api/users/:userId/reviews/:id",
+  isLoggedIn,
+  async (req, res, next) => {
+    try {
+      const { id, userId } = req.params;
+      const { text, rating } = req.body;
+
+      if (userId !== req.user.id) {
+        const error = new Error("Unauthorized");
+        error.status = 403;
+        throw error;
+      }
+
+      const updatedReview = await updateUserReview(id, text, rating);
+
+      res.status(200).json({
+        message: "review updated successfully",
+        review: updatedReview,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+app.delete(
+  "/api/users/:userId/reviews/:id",
+  isLoggedIn,
+  async (req, res, next) => {
+    try {
+      const userId = req.user.id;
+      const reviewId = req.params.id;
+
+      const review = await findReviewById(reviewId);
+      if (!review) {
+        const error = new Error("review not found");
+        error.status = 404;
+        throw error;
+      }
+
+      if (review.user_id !== userId) {
+        const error = new Error("Unauthorized");
+        error.status = 403;
+        throw error;
+      }
+
+      await deleteUserReview(reviewId);
+
+      res.status(200).json({ nessage: "Review deleted successfully" });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 app.post(
   "/api/items/:itemId/reviews/:id/comments",
@@ -199,10 +257,10 @@ const init = async () => {
       rating: 4,
     }),
     createUserReview({
-      text: "fuck these nachos",
+      text: "these nachos are gross",
       user_id: kai.id,
       item_id: nachos.id,
-      rating: 5,
+      rating: 2,
     }),
   ]);
 

@@ -27,7 +27,7 @@ const createTables = async () => {
     CREATE TABLE reviews(
         id UUID PRIMARY KEY,
         text VARCHAR(1000),
-        rating INTEGER CHECK (rating > 0 and rating < 6) NOT NULL,
+        rating INTEGER NOT NULL,
         user_id UUID REFERENCES users(id) NOT NULL,
         item_id UUID REFERENCES items(id) NOT NULL,
         CONSTRAINT unique_user_review UNIQUE (user_id, item_id)
@@ -149,6 +149,16 @@ const fetchUserReviews = async (user_id) => {
   return response.rows;
 };
 
+const findReviewById = async (reviewId) => {
+  const SQL = /*sql*/ `
+        SELECT *
+        FROM reviews
+        WHERE id = $1
+      `;
+  const response = await client.query(SQL, [reviewId]);
+  return response.rows[0];
+};
+
 const fetchItemReviews = async (item_id) => {
   const SQL = /*sql*/ `
       SELECT id, text, rating, user_id
@@ -167,6 +177,17 @@ const fetchUserComments = async (user_id) => {
       `;
   const response = await client.query(SQL, [user_id]);
   return response.rows;
+};
+
+const updateUserReview = async (reviewId, text, rating) => {
+  const SQL = /*sql*/ `
+      UPDATE reviews
+      SET text = $1, rating = $2
+      WHERE id = $3
+      RETURNING *;
+    `;
+  const response = await client.query(SQL, [text, rating, reviewId]);
+  return response.rows[0];
 };
 
 const deleteUserReview = async ({ user_id, id }) => {
@@ -226,6 +247,8 @@ module.exports = {
   fetchUserReviews,
   fetchItemReviews,
   fetchUserComments,
+  updateUserReview,
+  findReviewById,
   deleteUserReview,
   deleteUserComment,
   authenticate,
