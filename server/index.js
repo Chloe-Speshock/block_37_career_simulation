@@ -7,7 +7,9 @@ const {
   createUserComment,
   fetchUsers,
   fetchItems,
+  fetchSingleItem,
   fetchUserReviews,
+  fetchItemReviews,
   fetchUserComments,
   deleteUserReview,
   deleteUserComment,
@@ -21,12 +23,156 @@ app.use(express.json());
 
 const isLoggedIn = async (req, res, next) => {
   try {
+    console.log("Headers:", req.headers);
+    console.log("token received:", req.headers.authorization);
+    req.headers.authorization = req.headers.authorization.replace(
+      "Bearer ",
+      ""
+    );
+    // const token = req.headers.authorization.replace("Bearer ", "");
+
+    console.log("modified token:", req.headers.authorization);
+
     req.user = await findUserByToken(req.headers.authorization);
+    console.log("User object:", req.user);
     next();
   } catch (error) {
     next(error);
   }
 };
+
+app.get("/api/items", async (req, res, next) => {
+  try {
+    res.send(await fetchItems());
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/items/:id", async (req, res, next) => {
+  try {
+    const itemId = req.params.id;
+    const item = await fetchSingleItem(itemId);
+    if (!item) {
+      return res.status(404).json({ message: "item not found" });
+    }
+    res.json(item);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/auth/register", async (req, res, next) => {
+  try {
+    const { username, password } = req.body;
+    const newUser = await createUser({ username, password });
+    res
+      .status(201)
+      .json({ message: "user registered successfully", user: newUser });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/auth/login", async (req, res, next) => {
+  try {
+    res.send(await authenticate(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/auth/me", isLoggedIn, async (req, res, next) => {
+  try {
+    res.send(req.user);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/items/:itemId/reviews", async (req, res, next) => {
+  try {
+    const itemId = req.params.itemId;
+    const reviews = await fetchItemReviews(itemId);
+    if (reviews.length === 0) {
+      return res.status(404).json({ message: "no reviews for this item" });
+    }
+    res.json(reviews);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/items/:itemId/reviews/:id", async (req, res, next) => {
+  try {
+    const itemId = req.params.itemId;
+    const reviewId = req.params.id;
+    const review = await fetchItemReviews(itemId, reviewId);
+
+    if (!review) {
+      return res.status(404).json({ message: "review not found" });
+    }
+    res.json(review);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/api/items/:itemId/reviews", isLoggedIn, async (req, res, next) => {
+  try {
+    const { text, rating } = req.body;
+    const userId = req.user.id;
+
+    const itemId = req.params.itemId;
+
+    const newReview = await createUserReview({
+      text,
+      rating,
+      user_id: userId,
+      item_id: itemId,
+    });
+    console.log("new review:", newReview);
+
+    res
+      .status(201)
+      .json({ message: "review created successfully", review: newReview });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/api/reviews/me", isLoggedIn, async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const userReviews = await fetchUserReviews(userId);
+    res.json(userReviews);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post(
+  "/api/items/:itemId/reviews/:id/comments",
+  isLoggedIn,
+  async (req, res, next) => {
+    try {
+      const { text } = req.body;
+      const userId = req.user.id;
+      const reviewId = req.params.id;
+
+      const newComment = await createUserComment({
+        text,
+        user_id: userId,
+        review_id: reviewId,
+      });
+      res
+        .status(201)
+        .json({ message: "comment added successfully", comment: newComment });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 const init = async () => {
   await client.connect();
@@ -45,9 +191,30 @@ const init = async () => {
       createItem({ name: "icecream" }),
     ]);
 
-  //   const userReviews = await Promise.all([
-  //     createUserReview({ user_id: kate.id, item_id: hotdog.id }),
-  //   ]);
+  const [review1, review2] = await Promise.all([
+    createUserReview({
+      text: "love this hotdog",
+      user_id: kate.id,
+      item_id: hotdog.id,
+      rating: 4,
+    }),
+    createUserReview({
+      text: "fuck these nachos",
+      user_id: kai.id,
+      item_id: nachos.id,
+      rating: 5,
+    }),
+  ]);
+
+  const userComments = await Promise.all([
+    createUserComment({
+      text: "love this review",
+      user_id: kelsey.id,
+      review_id: review2.id,
+    }),
+  ]);
+
+  console.log("reviews seeded successfully!");
 
   const port = process.env.PORT || 3000;
   app.listen(port, () => console.log(`listening on port ${port}`));

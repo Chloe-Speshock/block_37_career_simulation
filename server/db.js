@@ -7,6 +7,7 @@ const uuid = require("uuid");
 const bcrypt = require("bcrypt");
 
 const jwt = require("jsonwebtoken");
+const JWT = process.env.JWT;
 
 const createTables = async () => {
   const SQL = /*sql*/ `
@@ -25,18 +26,22 @@ const createTables = async () => {
     );
     CREATE TABLE reviews(
         id UUID PRIMARY KEY,
+        text VARCHAR(1000),
+        rating INTEGER CHECK (rating > 0 and rating < 6) NOT NULL,
         user_id UUID REFERENCES users(id) NOT NULL,
         item_id UUID REFERENCES items(id) NOT NULL,
-        CONSTRAINT unique_user_id_item_id UNIQUE (user_id, item_id)
+        CONSTRAINT unique_user_review UNIQUE (user_id, item_id)
     );
     CREATE TABLE comments(
         id UUID PRIMARY KEY,
+        text VARCHAR(1000),
         user_id UUID REFERENCES users(id) NOT NULL,
-        comment_id UUID REFERENCES reviews(id) NOT NULL
+        review_id UUID REFERENCES reviews(id) NOT NULL
 
     );
     `;
-  await client.query(SQL);
+  const res = await client.query(SQL);
+  return res.rows;
 };
 
 const createUser = async ({ username, password }) => {
@@ -79,19 +84,30 @@ const authenticate = async ({ username, password }) => {
   return { token };
 };
 
-const createUserReview = async ({ user_id, review_id }) => {
+const createUserReview = async ({ text, user_id, item_id, rating }) => {
   const SQL = /*sql*/ `
-      INSERT INTO reviews(id, user_id, review_id) VALUES ($1, $2, $3) RETURNING * 
+      INSERT INTO reviews(id, text, user_id, item_id, rating) VALUES ($1, $2, $3, $4, $5) RETURNING * 
     `;
-  const response = await client.query(SQL, [uuid.v4(), user_id, review_id]);
+  const response = await client.query(SQL, [
+    uuid.v4(),
+    text,
+    user_id,
+    item_id,
+    rating,
+  ]);
   return response.rows[0];
 };
 
-const createUserComment = async ({ user_id, comment_id }) => {
+const createUserComment = async ({ text, user_id, review_id }) => {
   const SQL = /*sql*/ `
-        INSERT INTO comments(id, user_id, comment_id) VALUES ($1, $2, $3) RETURNING * 
+        INSERT INTO comments(id, text, user_id, review_id) VALUES ($1, $2, $3, $4) RETURNING * 
       `;
-  const response = await client.query(SQL, [uuid.v4(), user_id, comment_id]);
+  const response = await client.query(SQL, [
+    uuid.v4(),
+    text,
+    user_id,
+    review_id,
+  ]);
   return response.rows[0];
 };
 
@@ -113,6 +129,16 @@ const fetchItems = async () => {
   return response.rows;
 };
 
+const fetchSingleItem = async (item_id) => {
+  const SQL = /*sql*/ `
+        SELECT *
+        FROM items
+        WHERE id = $1
+      `;
+  const response = await client.query(SQL, [item_id]);
+  return response.rows;
+};
+
 const fetchUserReviews = async (user_id) => {
   const SQL = /*sql*/ `
       SELECT *
@@ -120,6 +146,16 @@ const fetchUserReviews = async (user_id) => {
       WHERE user_id = $1
     `;
   const response = await client.query(SQL, [user_id]);
+  return response.rows;
+};
+
+const fetchItemReviews = async (item_id) => {
+  const SQL = /*sql*/ `
+      SELECT id, text, rating, user_id
+      FROM reviews
+      WHERE item_id = $1
+    `;
+  const response = await client.query(SQL, [item_id]);
   return response.rows;
 };
 
@@ -152,10 +188,12 @@ const deleteUserComment = async ({ user_id, id }) => {
 };
 
 const findUserByToken = async (token) => {
+  console.log("token received:", token);
   let id;
   try {
     const payload = await jwt.verify(token, JWT);
     id = payload.id;
+    console.log("User ID:", id);
   } catch (ex) {
     const error = Error("not authorized");
     error.status = 401;
@@ -184,7 +222,9 @@ module.exports = {
   createUserComment,
   fetchUsers,
   fetchItems,
+  fetchSingleItem,
   fetchUserReviews,
+  fetchItemReviews,
   fetchUserComments,
   deleteUserReview,
   deleteUserComment,
